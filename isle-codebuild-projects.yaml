@@ -1,0 +1,781 @@
+Parameters:
+
+  # General
+  
+  App:
+    Description: >
+      Which service does this template serve?
+    Type: String
+    Default: isle
+
+  Creator:
+    Description: >
+      IAM username.
+    Type: String
+
+  Env:
+    Description: >
+      The value for the 'lib:env' tag.
+    Type: String
+    Default: test
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    ConstraintDescription: >
+      dev, test, or prod
+
+  LogRetention:
+    Description: >
+      CloudWatch log lifetime.
+    Type: Number
+    Default: 14
+
+  # Codebase
+
+  ApacheCodeRepo:
+    Description: >
+      GitHub clone url with protocol.
+    Type: String
+    Default: https://github.com/fsulib/fsu-xform-isle-apache.git
+
+  FedoraCodeRepo:
+    Description: >
+      GitHub clone url with protocol.
+    Type: String
+    Default: https://github.com/fsulib/fsu-xform-isle-fedora.git
+
+  ImageservicesCodeRepo:
+    Description: >
+      GitHub clone url with protocol.
+    Type: String
+    Default: https://github.com/fsulib/fsu-xform-isle-imageservices.git
+
+  # BuildSpecs
+
+  ApacheBuildSpec:
+    Description: >
+      Build spec filename.
+    Type: String
+    Default: buildspec-apache.yaml
+
+  FedoraBuildSpec:
+    Description: >
+      Build spec filename.
+    Type: String
+    Default: buildspec-fedora.yaml
+
+  ImageservicesBuildSpec:
+    Description: >
+      Build spec filename.
+    Type: String
+    Default: buildspec-imageservices.yaml
+
+  # Build Environment Variables
+
+  FedoraLocalDbEndpoint:
+    Description: >
+      Passed as DB_ENDPOINT_LOCAL
+    Type: String
+    Default: 172.17.0.2
+
+  FedoraTestDbEndpoint:
+    Description: >
+      Passed as DB_ENDPOINT_TEST
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /default/rds/test/db-endpoint
+
+  FedoraProdDbEndpoint:
+    Description: >
+      Passed as DB_ENDPOINT_PROD
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /default/rds/prod/db-endpoint
+  # Image Repos
+
+  ApacheImageRepoName:
+    Description: >
+      Apache ECR Name
+    Type: String
+    Default: isle/fsu-apache
+
+  FedoraImageRepoName:
+    Description: >
+      Fedora ECR Name
+    Type: String
+    Default: isle/fsu-fedora
+
+  ImageservicesImageRepoName:
+    Description: >
+      Imageservices ECR Name
+    Type: String
+    Default: isle/fsu-imageservices
+
+  ApacheImageLifecyclePolicy:
+    Description: >
+      Key corresponding to the image's lifecycle policy in the parameter store.
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /isle/ecr/lifecycle/apache
+
+  FedoraImageLifecyclePolicy:
+    Description: >
+      Key corresponding to the image's lifecycle policy in the parameter store.
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /isle/ecr/lifecycle/fedora
+
+  ImageservicesImageLifecyclePolicy:
+    Description: >
+      Key corresponding to the image's lifecycle policy in the parameter store.
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /isle/ecr/lifecycle/imageservices
+
+Resources:
+
+  # Image Repos
+
+  ApacheImageRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      ImageScanningConfiguration:
+        scanOnPush: true
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: !Ref ApacheImageLifecyclePolicy
+        RegistryId: !Ref AWS::AccountId
+      RepositoryName: !Ref ApacheImageRepoName
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:isle-component
+          Value: image-repo-apache
+
+  FedoraImageRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      ImageScanningConfiguration:
+        scanOnPush: true
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: !Ref FedoraImageLifecyclePolicy
+        RegistryId: !Ref AWS::AccountId
+      RepositoryName: !Ref FedoraImageRepoName
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:isle-component
+          Value: image-repo-fedora
+
+  ImageservicesImageRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      ImageScanningConfiguration:
+        scanOnPush: true
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: !Ref ImageservicesImageLifecyclePolicy
+        RegistryId: !Ref AWS::AccountId
+      RepositoryName: !Ref ImageservicesImageRepoName
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:isle-component
+          Value: image-repo-imageservices
+
+  # Image Repo Event Rules
+  # Just emailing scan, push, and delete events at the moment.
+  # TODO remove sns, point at a lambda target
+  
+  IsleImageRepoScanEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Handles scan events for Isle container images.
+      EventPattern:
+        region:
+          - !Ref AWS::Region
+        account: 
+          - !Ref AWS::AccountId
+        source:
+          - aws.ecr
+        detail-type:
+          - ECR Image Scan
+        resources:
+          - !GetAtt ApacheImageRepo.Arn
+          - !GetAtt FedoraImageRepo.Arn
+          - !GetAtt ImageservicesImageRepo.Arn
+        detail:
+          scan-status:
+            - COMPLETE
+      RoleArn: !GetAtt IsleImageRepoEventsIamRole.Arn
+      Targets:
+        - Arn: !Ref IsleCodeBuildSnsTopic
+          Id: TempScanSnsTargetId
+
+  IsleImageRepoPushEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Handles push events for Isle container images.
+      EventPattern:
+        region:
+          - !Ref AWS::Region
+        account: 
+          - !Ref AWS::AccountId
+        source:
+          - aws.ecr
+        detail-type:
+          - ECR Image Action
+        detail:
+          action-type:
+            - PUSH
+      RoleArn: !GetAtt IsleImageRepoEventsIamRole.Arn
+      Targets:
+        - Arn: !Ref IsleCodeBuildSnsTopic
+          Id: TempPushSnsTargetId
+          
+  IsleImageRepoDeleteEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Handles delete events for Isle container images.
+      EventPattern:
+        region:
+          - !Ref AWS::Region
+        account: 
+          - !Ref AWS::AccountId
+        source:
+          - aws.ecr
+        detail-type:
+          - ECR Image Action
+        detail:
+          action-type:
+            - DELETE
+      RoleArn: !GetAtt IsleImageRepoEventsIamRole.Arn
+      Targets:
+        - Arn: !Ref IsleCodeBuildSnsTopic
+          Id: TempDeleteSnsTargetId
+
+  # Build Projects
+
+  ApacheBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: NO_ARTIFACTS
+      BadgeEnabled: true
+      Cache:
+        Type: NO_CACHE
+      Description: Transforms and builds an Isle Apache container image.
+      EncryptionKey: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Environment:
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Sub ${AWS::Region}
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Type: PLAINTEXT
+            Value: !Ref ApacheImageRepo
+        Image: aws/codebuild/standard:4.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref IsleCodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: FSU-Apache-Build-Log
+        S3Logs:
+          EncryptionDisabled: true
+          Location: !Sub arn:aws:s3:::logging.lib.fsu.edu/isle/code-build/apache/${Env}
+          Status: ENABLED
+      Name: FSU-Apache-Build
+      QueuedTimeoutInMinutes: 120
+      SecondaryArtifacts: []
+      SecondarySourceVersions: []
+      SecondarySources: []
+      ServiceRole: !GetAtt IsleCodeBuildServiceRole.Arn
+      Source:
+        BuildSpec: !Ref ApacheBuildSpec
+        GitCloneDepth: 1
+        GitSubmodulesConfig:
+          FetchSubmodules: false
+        InsecureSsl: false
+        Location: !Ref ApacheCodeRepo
+        ReportBuildStatus: false
+        Type: GITHUB
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:isle-component
+          Value: Apache
+      TimeoutInMinutes: 60
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/test$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/prod$
+
+  FedoraBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: NO_ARTIFACTS
+      BadgeEnabled: true
+      Cache:
+        Type: NO_CACHE
+      Description: Transforms and builds an Isle Fedora container image.
+      EncryptionKey: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Environment:
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Sub ${AWS::Region}
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Type: PLAINTEXT
+            Value: !Ref FedoraImageRepo
+          - Name: DB_ENDPOINT_LOCAL
+            Type: PLAINTEXT
+            Value: !Ref FedoraLocalDbEndpoint
+          - Name: DB_ENDPOINT_TEST
+            Type: PLAINTEXT
+            Value: !Ref FedoraTestDbEndpoint
+          - Name: DB_ENDPOINT_PROD
+            Type: PLAINTEXT
+            Value: !Ref FedoraProdDbEndpoint
+        Image: aws/codebuild/standard:4.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref IsleCodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: FSU-Fedora-Build-Log
+        S3Logs:
+          EncryptionDisabled: true
+          Location: arn:aws:s3:::logging.lib.fsu.edu/isle/code-build/fedora
+          Status: ENABLED
+      Name: FSU-Fedora-Build
+      QueuedTimeoutInMinutes: 120
+      SecondaryArtifacts: []
+      SecondarySourceVersions: []
+      SecondarySources: []
+      ServiceRole: !GetAtt IsleCodeBuildServiceRole.Arn
+      Source:
+        BuildSpec: !Ref FedoraBuildSpec
+        GitCloneDepth: 1
+        GitSubmodulesConfig:
+          FetchSubmodules: false
+        InsecureSsl: false
+        Location: !Ref FedoraCodeRepo
+        ReportBuildStatus: false
+        Type: GITHUB
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:isle-component
+          Value: fedora
+      TimeoutInMinutes: 60
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/local$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/test$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/prod$
+
+  ImageservicesBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: NO_ARTIFACTS
+      BadgeEnabled: true
+      Cache:
+        Type: NO_CACHE
+      Description: Transforms and builds an Isle Imageservices container image.
+      EncryptionKey: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Sub ${AWS::Region}
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Type: PLAINTEXT
+            Value: !Ref ImageservicesImageRepo
+        Image: aws/codebuild/standard:4.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref IsleCodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: FSU-Imageservices-Build-Log
+        S3Logs:
+          EncryptionDisabled: true
+          Location: arn:aws:s3:::logging.lib.fsu.edu/isle/code-build/imageservices
+          Status: ENABLED
+      Name: FSU-Imageservices-Build
+      QueuedTimeoutInMinutes: 120
+      SecondaryArtifacts: []
+      SecondarySourceVersions: []
+      SecondarySources: []
+      ServiceRole: !GetAtt IsleCodeBuildServiceRole.Arn
+      Source:
+        BuildSpec: !Ref ImageservicesBuildSpec
+        GitCloneDepth: 1
+        GitSubmodulesConfig:
+          FetchSubmodules: false
+        InsecureSsl: false
+        Location: !Ref ImageservicesCodeRepo
+        ReportBuildStatus: false
+        Type: GITHUB
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:isle-component
+          Value: imageservices
+      TimeoutInMinutes: 60
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/test$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/prod$
+
+  # Build Logging
+
+  IsleCodeBuildLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub Isle-CodeBuild_${Env}
+      RetentionInDays: !Ref LogRetention
+
+  # Build Notifications
+  # TODO Generalize topic name to include ECR
+  
+  IsleCodeBuildSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub IsleCodeBuild_${Env}
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:isle-component
+          Value: build-notifications
+
+  IsleCodeBuildSnsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+              - codestar-notifications.amazonaws.com
+              - events.amazonaws.com
+          Action:
+            - sns:Publish
+          Resource: !Ref IsleCodeBuildSnsTopic
+      Topics:
+        - !Ref IsleCodeBuildSnsTopic
+
+  # TODO: Remove Subscription
+  IsleCodeBuildSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref IsleCodeBuildSnsTopic
+      Protocol: email
+      Endpoint: mshackelford@fsu.edu
+
+  ApacheBuildNotification:
+    Type: AWS::CodeStarNotifications::NotificationRule
+    Properties:
+      DetailType: FULL
+      EventTypeIds:
+        - codebuild-project-build-state-succeeded
+        - codebuild-project-build-state-failed
+      Name: !Sub Apache_${Env}_BuildNotification
+      Resource: !GetAtt ApacheBuild.Arn
+      Status: ENABLED
+      Targets:
+        - TargetAddress: !Ref IsleCodeBuildSnsTopic
+          TargetType: SNS
+      Tags:
+        'lib:app': !Ref App
+        'lib:created-by': !Ref Creator
+        'lib:env': !Ref Env
+        'lib:isle-component': build-notifications-apache
+
+  FedoraBuildNotification:
+    Type: AWS::CodeStarNotifications::NotificationRule
+    Properties:
+      DetailType: FULL
+      EventTypeIds:
+        - codebuild-project-build-state-succeeded
+        - codebuild-project-build-state-failed
+      Name: !Sub Fedora_${Env}_BuildNotification
+      Resource: !GetAtt FedoraBuild.Arn
+      Status: ENABLED
+      Targets:
+        - TargetAddress: !Ref IsleCodeBuildSnsTopic
+          TargetType: SNS
+      Tags:
+        'lib:app': !Ref App
+        'lib:created-by': !Ref Creator
+        'lib:env': !Ref Env
+        'lib:isle-component': build-notifications-fedora
+
+  ImageservicesBuildNotification:
+    Type: AWS::CodeStarNotifications::NotificationRule
+    Properties:
+      DetailType: FULL
+      EventTypeIds:
+        - codebuild-project-build-state-succeeded
+        - codebuild-project-build-state-failed
+      Name: !Sub Imageservices_${Env}_BuildNotification
+      Resource: !GetAtt ImageservicesBuild.Arn
+      Status: ENABLED
+      Targets:
+        - TargetAddress: !Ref IsleCodeBuildSnsTopic
+          TargetType: SNS
+      Tags:
+        'lib:app': !Ref App
+        'lib:created-by': !Ref Creator
+        'lib:env': !Ref Env
+        'lib:isle-component': build-notifications-imageservices
+
+  # IAM
+  
+  IsleCodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Join:
+          - '-'
+          - - IsleCodeBuildServiceRole
+            - !Ref AWS::Region
+      Path: '/codebuild_roles/'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub IsleCodeBuild_${Env}_LogsPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:CreateLogStream
+                Resource: !GetAtt IsleCodeBuildLogsGroup.Arn
+        - PolicyName: !Sub IsleCodeBuild_${Env}_LogBucketPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: arn:aws:s3:::logging.lib.fsu.edu
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: arn:aws:s3:::logging.lib.fsu.edu/isle/code-build/*
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser'
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:isle-component
+          Value: build-role
+          
+  IsleImageRepoEventsIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Join:
+          - '-'
+          - - ImageRepoEventsIamRole
+            - !Ref AWS::Region
+      Path: '/ecr_roles/'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:isle-component
+          Value: ecr-events-role
+
+Outputs:
+  ApacheIRName:
+    Value: !Ref ApacheImageRepoName
+    Export:
+      Name: ApacheImageRepoName
+
+  FedoraIRName:
+    Value: !Ref FedoraImageRepoName
+    Export:
+      Name: FedoraImageRepoName
+
+  ImageservicesIRName:
+    Value: !Ref ImageservicesImageRepoName
+    Export:
+      Name: ImageservicesImageRepoName
+
+  ApacheIRArn:
+    Value: !GetAtt ApacheImageRepo.Arn
+    Export:
+      Name: ApacheImageRepoArn
+
+  FedoraIRArn:
+    Value: !GetAtt FedoraImageRepo.Arn
+    Export:
+      Name: FedoraImageRepoArn
+
+  ImageservicesIRArn:
+    Value: !GetAtt ImageservicesImageRepo.Arn
+    Export:
+      Name: ImageservicesImageRepoArn
+
+  ApacheBuildName:
+    Value: !Ref ApacheBuild
+    Export:
+      Name: ApacheBuildProjectName
+
+  FedoraBuildName:
+    Value: !Ref FedoraBuild
+    Export:
+      Name: FedoraBuildProjectName
+
+  ImageservicesBuildName:
+    Value: !Ref ImageservicesBuild
+    Export:
+      Name: ImageservicesBuildProjectName
+
+  ApacheBuildArn:
+    Value: !GetAtt ApacheBuild.Arn
+    Export:
+      Name: ApacheBuildProjectArn
+
+  FedoraBuildArn:
+    Value: !GetAtt FedoraBuild.Arn
+    Export:
+      Name: FedoraBuildProjectArn
+
+  ImageservicesBuildArn:
+    Value: !GetAtt ImageservicesBuild.Arn
+    Export:
+      Name: ImageservicesBuildProjectArn
+
+  IsleCodeBuildSnsArn:
+    Value: !Ref IsleCodeBuildSnsTopic
+    Export:
+      Name: IsleCodeBuildSnsArn
+
+  IsleCodeBuildRoleArn:
+    Value: !GetAtt IsleCodeBuildServiceRole.Arn
+    Export:
+      Name: IsleCodeBuildRoleArn
+
+  IsleCodeBuildRoleId:
+    Value: !GetAtt IsleCodeBuildServiceRole.RoleId
+    Export:
+      Name: IsleCodeBuildRoleId
+# vim: set fdm=indent:

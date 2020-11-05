@@ -1,0 +1,17 @@
+{
+    "rules": [
+        {
+            "rulePriority": 1,
+            "description": "FSU-Fedora image count policy",
+            "selection": {
+                "tagStatus": "untagged",
+                "countType": "imageCountMoreThan",
+                "countNumber": 3
+            },
+            "action": {
+                "type": "expire"
+            }
+        }
+    ]
+}
+
