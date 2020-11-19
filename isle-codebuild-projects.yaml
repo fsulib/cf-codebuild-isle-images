@@ -342,6 +342,13 @@ Resources:
               ExcludeMatchedPattern: true
             - Type: HEAD_REF
               Pattern: ^refs/tags/prod$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/aws$
 
   FedoraBuild:
     Type: AWS::CodeBuild::Project
@@ -436,6 +443,13 @@ Resources:
               ExcludeMatchedPattern: true
             - Type: HEAD_REF
               Pattern: ^refs/tags/prod$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/aws$
 
   ImageservicesBuild:
     Type: AWS::CodeBuild::Project
@@ -514,6 +528,13 @@ Resources:
               ExcludeMatchedPattern: true
             - Type: HEAD_REF
               Pattern: ^refs/tags/prod$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/aws$
 
   # Build Logging
 
