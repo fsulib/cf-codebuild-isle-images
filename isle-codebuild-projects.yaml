@@ -381,6 +381,9 @@ Resources:
           - Name: DB_ENDPOINT_PROD
             Type: PLAINTEXT
             Value: !Ref FedoraProdDbEndpoint
+          - Name: DB_ENDPOINT_AWS
+            Type: PLAINTEXT
+            Value: !Ref FedoraProdDbEndpoint
         Image: aws/codebuild/standard:4.0
         ImagePullCredentialsType: CODEBUILD
         PrivilegedMode: true
