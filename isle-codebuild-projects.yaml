@@ -51,6 +51,18 @@ Parameters:
     Type: String
     Default: https://github.com/fsulib/fsu-xform-isle-imageservices.git
 
+  Mysql4CodeRepo:
+    Description: >
+      Github clone url with protocol.
+    Type: String
+    Default: https://github.com/fsulib/fsu_purlz_mysql4docker.git
+
+  PurlzCodeRepo:
+    Description: >
+      Github clone url with protocol.
+    Type: String
+    Default: https://github.com/fsulib/fsu_purlz.git
+
   # BuildSpecs
 
   ApacheBuildSpec:
@@ -71,6 +83,18 @@ Parameters:
     Type: String
     Default: buildspec-imageservices.yaml
 
+  Mysql4BuildSpec:
+    Description: >
+      Build spec filename.
+    Type: String
+    Default: buildspec-mysql4.yaml
+
+  PurlzBuildSpec:
+    Description: >
+      Build spec filename.
+    Type: String
+    Default: buildspec-purlz.yaml
+
   # Build Environment Variables
 
   FedoraLocalDbEndpoint:
@@ -90,6 +114,7 @@ Parameters:
       Passed as DB_ENDPOINT_PROD
     Type: AWS::SSM::Parameter::Value<String>
     Default: /default/rds/prod/db-endpoint
+
   # Image Repos
 
   ApacheImageRepoName:
@@ -110,6 +135,20 @@ Parameters:
     Type: String
     Default: isle/fsu-imageservices
 
+  PurlzImageRepoName:
+    Description: >
+      Purlz ECR Name
+    Type: String
+    Default: purlz/purlz
+
+  Mysql4ImageRepoName:
+    Description: >
+      Mysql4 ECR Name
+    Type: String
+    Default: purlz/mysql4
+
+  # Repo Lifecycle Policies
+
   ApacheImageLifecyclePolicy:
     Description: >
       Key corresponding to the image's lifecycle policy in the parameter store.
@@ -127,6 +166,18 @@ Parameters:
       Key corresponding to the image's lifecycle policy in the parameter store.
     Type: AWS::SSM::Parameter::Value<String>
     Default: /isle/ecr/lifecycle/imageservices
+
+  PurlzImageLifecyclePolicy:
+    Description: >
+      Key corresponding to the image's lifecycle policy in the parameter store.
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /isle/ecr/lifecycle/purlz
+
+  Mysql4ImageLifecyclePolicy:
+    Description: >
+      Key corresponding to the image's lifecycle policy in the parameter store.
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /isle/ecr/lifecycle/mysql4
 
 Resources:
 
@@ -191,6 +242,46 @@ Resources:
           Value: !Ref Env
         - Key: lib:isle-component
           Value: image-repo-imageservices
+
+  Mysql4ImageRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      ImageScanningConfiguration:
+        scanOnPush: false
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: !Ref Mysql4ImageLifecyclePolicy
+        RegistryId: !Ref AWS::AccountId
+      RepositoryName: !Ref Mysql4ImageRepoName
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:isle-component
+          Value: image-repo-purlz-mysql4
+    
+  PurlzImageRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      ImageScanningConfiguration:
+        scanOnPush: false
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: !Ref PurlzImageLifecyclePolicy
+        RegistryId: !Ref AWS::AccountId
+      RepositoryName: !Ref PurlzImageRepoName
+      Tags:
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:isle-component
+          Value: image-repo-purlz-purlz
 
   # Image Repo Event Rules
   # Just emailing scan, push, and delete events at the moment.
@@ -276,7 +367,7 @@ Resources:
       Description: Transforms and builds an Isle Apache container image.
       EncryptionKey: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
       Environment:
-        ComputeType: BUILD_GENERAL1_MEDIUM
+        ComputeType: BUILD_GENERAL1_LARGE
         EnvironmentVariables:
           - Name: AWS_DEFAULT_REGION
             Type: PLAINTEXT
@@ -361,7 +452,7 @@ Resources:
       Description: Transforms and builds an Isle Fedora container image.
       EncryptionKey: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
       Environment:
-        ComputeType: BUILD_GENERAL1_MEDIUM
+        ComputeType: BUILD_GENERAL1_LARGE
         EnvironmentVariables:
           - Name: AWS_DEFAULT_REGION
             Type: PLAINTEXT
@@ -465,7 +556,7 @@ Resources:
       Description: Transforms and builds an Isle Imageservices container image.
       EncryptionKey: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
       Environment:
-        ComputeType: BUILD_GENERAL1_SMALL
+        ComputeType: BUILD_GENERAL1_LARGE
         EnvironmentVariables:
           - Name: AWS_DEFAULT_REGION
             Type: PLAINTEXT
@@ -513,6 +604,180 @@ Resources:
           Value: !Ref Creator
         - Key: lib:isle-component
           Value: imageservices
+      TimeoutInMinutes: 60
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/test$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/prod$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/aws$
+
+  Mysql4Build:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: NO_ARTIFACTS
+      BadgeEnabled: true
+      Cache:
+        Type: NO_CACHE
+      Description: Builds and antiquated and dangerous Mysql4 container for Purlz's use.
+      EncryptionKey: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Environment:
+        ComputeType: BUILD_GENERAL1_LARGE
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Sub ${AWS::Region}
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Type: PLAINTEXT
+            Value: !Ref Mysql4ImageRepo
+        Image: aws/codebuild/standard:4.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref IsleCodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: FSU-Purlz-Mysql4-Build-Log
+        S3Logs:
+          EncryptionDisabled: true
+          Location: arn:aws:s3:::logging.lib.fsu.edu/isle/code-build/purlz-mysql4
+          Status: ENABLED
+      Name: FSU-Mysql4-Build
+      QueuedTimeoutInMinutes: 120
+      SecondaryArtifacts: []
+      SecondarySourceVersions: []
+      SecondarySources: []
+      ServiceRole: !GetAtt IsleCodeBuildServiceRole.Arn
+      Source:
+        BuildSpec: !Ref Mysql4BuildSpec
+        GitCloneDepth: 1
+        GitSubmodulesConfig:
+          FetchSubmodules: false
+        InsecureSsl: false
+        Location: !Ref Mysql4CodeRepo
+        ReportBuildStatus: false
+        Type: GITHUB
+      Tags:
+        - Key: Name
+          Value: Isle-Codebuild-Mysql4-Build
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:isle-component
+          Value: purlz
+      TimeoutInMinutes: 60
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/test$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/prod$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/.*
+              ExcludeMatchedPattern: true
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/aws$
+
+  PurlzBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: NO_ARTIFACTS
+      BadgeEnabled: true
+      Cache:
+        Type: NO_CACHE
+      Description: Builds purlz, a relic of a persistent url redirection service and management layer.
+      EncryptionKey: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Environment:
+        ComputeType: BUILD_GENERAL1_LARGE
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Type: PLAINTEXT
+            Value: !Sub ${AWS::Region}
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Type: PLAINTEXT
+            Value: !Ref PurlzImageRepo
+        Image: aws/codebuild/standard:4.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref IsleCodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: FSU-Purlz-Purlz-Build-Log
+        S3Logs:
+          EncryptionDisabled: true
+          Location: arn:aws:s3:::logging.lib.fsu.edu/isle/code-build/purlz-purlz
+          Status: ENABLED
+      Name: FSU-Purlz-Build
+      QueuedTimeoutInMinutes: 120
+      SecondaryArtifacts: []
+      SecondarySourceVersions: []
+      SecondarySources: []
+      ServiceRole: !GetAtt IsleCodeBuildServiceRole.Arn
+      Source:
+        BuildSpec: !Ref PurlzBuildSpec
+        GitCloneDepth: 1
+        GitSubmodulesConfig:
+          FetchSubmodules: false
+        InsecureSsl: false
+        Location: !Ref PurlzCodeRepo
+        ReportBuildStatus: false
+        Type: GITHUB
+      Tags:
+        - Key: Name
+          Value: Isle-Codebuild-Purlz-Build
+        - Key: lib:app
+          Value: !Ref App
+        - Key: lib:env
+          Value: !Ref Env
+        - Key: lib:created-by
+          Value: !Ref Creator
+        - Key: lib:isle-component
+          Value: purlz
       TimeoutInMinutes: 60
       Triggers:
         Webhook: true
@@ -646,6 +911,44 @@ Resources:
         'lib:env': !Ref Env
         'lib:isle-component': build-notifications-imageservices
 
+  Mysql4BuildNotification:
+    Type: AWS::CodeStarNotifications::NotificationRule
+    Properties:
+      DetailType: FULL
+      EventTypeIds:
+        - codebuild-project-build-state-succeeded
+        - codebuild-project-build-state-failed
+      Name: !Sub Mysql4_${Env}_BuildNotification
+      Resource: !GetAtt Mysql4Build.Arn
+      Status: ENABLED
+      Targets:
+        - TargetAddress: !Ref IsleCodeBuildSnsTopic
+          TargetType: SNS
+      Tags:
+        'lib:app': !Ref App
+        'lib:created-by': !Ref Creator
+        'lib:env': !Ref Env
+        'lib:isle-component': build-notifications-purlz-mysql4
+
+  PurlzBuildNotification:
+    Type: AWS::CodeStarNotifications::NotificationRule
+    Properties:
+      DetailType: FULL
+      EventTypeIds:
+        - codebuild-project-build-state-succeeded
+        - codebuild-project-build-state-failed
+      Name: !Sub Mysql4_${Env}_BuildNotification
+      Resource: !GetAtt PurlzBuild.Arn
+      Status: ENABLED
+      Targets:
+        - TargetAddress: !Ref IsleCodeBuildSnsTopic
+          TargetType: SNS
+      Tags:
+        'lib:app': !Ref App
+        'lib:created-by': !Ref Creator
+        'lib:env': !Ref Env
+        'lib:isle-component': build-notifications-purlz-purlz
+
   # IAM
   
   IsleCodeBuildServiceRole:
@@ -743,6 +1046,16 @@ Outputs:
     Export:
       Name: ImageservicesImageRepoName
 
+  Mysql4IRName:
+    Value: !Ref Mysql4ImageRepoName
+    Export:
+      Name: Mysql4ImageRepoName
+
+  PurlzIRName:
+    Value: !Ref PurlzImageRepoName
+    Export:
+      Name: PurlzImageRepoName
+
   ApacheIRArn:
     Value: !GetAtt ApacheImageRepo.Arn
     Export:
@@ -757,6 +1070,16 @@ Outputs:
     Value: !GetAtt ImageservicesImageRepo.Arn
     Export:
       Name: ImageservicesImageRepoArn
+
+  Mysql4IRArn:
+    Value: !GetAtt Mysql4ImageRepo.Arn
+    Export:
+      Name: Mysql4ImageRepoArn
+
+  PurlzIRArn:
+    Value: !GetAtt PurlzImageRepo.Arn
+    Export:
+      Name: PurlzImageRepoArn
 
   ApacheBuildName:
     Value: !Ref ApacheBuild
@@ -773,6 +1096,16 @@ Outputs:
     Export:
       Name: ImageservicesBuildProjectName
 
+  Mysql4BuildName:
+    Value: !Ref Mysql4Build
+    Export:
+      Name: Mysql4BuildProjectName
+
+  PurlzBuildName:
+    Value: !Ref PurlzBuild
+    Export:
+      Name: PurlzBuildProjectName
+
   ApacheBuildArn:
     Value: !GetAtt ApacheBuild.Arn
     Export:
@@ -788,6 +1121,16 @@ Outputs:
     Export:
       Name: ImageservicesBuildProjectArn
 
+  Mysql4BuildArn:
+    Value: !GetAtt Mysql4Build.Arn
+    Export:
+      Name: Mysql4BuildProjectArn
+
+  PurlzBuildArn:
+    Value: !GetAtt PurlzBuild.Arn
+    Export:
+      Name: PurlzBuildProjectArn
+
   IsleCodeBuildSnsArn:
     Value: !Ref IsleCodeBuildSnsTopic
     Export:
@@ -802,4 +1145,5 @@ Outputs:
     Value: !GetAtt IsleCodeBuildServiceRole.RoleId
     Export:
       Name: IsleCodeBuildRoleId
+
 # vim: set fdm=indent:
