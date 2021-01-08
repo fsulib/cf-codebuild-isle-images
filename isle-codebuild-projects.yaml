@@ -918,7 +918,7 @@ Resources:
       EventTypeIds:
         - codebuild-project-build-state-succeeded
         - codebuild-project-build-state-failed
-      Name: !Sub Mysql4_${Env}_BuildNotification
+      Name: !Sub Purlz_Mysql4_${Env}_BuildNotification
       Resource: !GetAtt Mysql4Build.Arn
       Status: ENABLED
       Targets:
@@ -937,7 +937,7 @@ Resources:
       EventTypeIds:
         - codebuild-project-build-state-succeeded
         - codebuild-project-build-state-failed
-      Name: !Sub Mysql4_${Env}_BuildNotification
+      Name: !Sub Purlz_Purlz_${Env}_BuildNotification
       Resource: !GetAtt PurlzBuild.Arn
       Status: ENABLED
       Targets:
