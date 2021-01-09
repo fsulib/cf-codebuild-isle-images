@@ -739,6 +739,27 @@ Resources:
           - Name: IMAGE_REPO_NAME
             Type: PLAINTEXT
             Value: !Ref PurlzImageRepo
+          - Name: PURLZ_HOST
+            Type: PARAMETER_STORE
+            Value: /isle/purlz/env/any/PURLZ_HOST
+          - Name: PURLZ_PORT
+            Type: PARAMETER_STORE
+            Value: /isle/purlz/env/any/PURLZ_PORT
+          - Name: PURLZ_DB_HOST
+            Type: PARAMETER_STORE
+            Value: /isle/purlz/env/any/PURLZ_DB_HOST
+          - Name: PURLZ_DB_PORT
+            Type: PARAMETER_STORE
+            Value: /isle/purlz/env/any/PURLZ_DB_PORT
+          - Name: PURLZ_DB_NAME
+            Type: PARAMETER_STORE
+            Value: /isle/purlz/env/any/PURLZ_DB_NAME
+          - Name: PURLZ_DB_USER
+            Type: PARAMETER_STORE
+            Value: /isle/purlz/env/any/PURLZ_DB_USER
+          - Name: PURLZ_DB_PASSWORD
+            Type: PARAMETER_STORE
+            Value: /isle/purlz/env/any/PURLZ_DB_PASSWORD
         Image: aws/codebuild/standard:4.0
         ImagePullCredentialsType: CODEBUILD
         PrivilegedMode: true
@@ -991,6 +1012,20 @@ Resources:
                 Action:
                   - s3:PutObject
                 Resource: arn:aws:s3:::logging.lib.fsu.edu/isle/code-build/*
+        - PolicyName: !Sub IsleCodeBuild_${Env}_ParametersPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:DescribeParameters
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                  - ssm:GetParametersByPath
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/isle/*
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser'
       Tags:
