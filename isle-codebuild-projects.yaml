@@ -756,7 +756,7 @@ Resources:
             Value: /isle/purlz/env/any/PURLZ_DB_NAME
           - Name: PURLZ_DB_USER
             Type: PARAMETER_STORE
-            Value: /isle/purlz/env/any/PURLZ_DB_USER
+            Value: /isle/purlz/env/any/PURLZ_DB_USERNAME
           - Name: PURLZ_DB_PASSWORD
             Type: PARAMETER_STORE
             Value: /isle/purlz/env/any/PURLZ_DB_PASSWORD
