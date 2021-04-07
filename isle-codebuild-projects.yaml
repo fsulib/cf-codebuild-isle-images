@@ -95,26 +95,6 @@ Parameters:
     Type: String
     Default: buildspec-purlz.yaml
 
-  # Build Environment Variables
-
-  FedoraLocalDbEndpoint:
-    Description: >
-      Passed as DB_ENDPOINT_LOCAL
-    Type: String
-    Default: 172.17.0.2
-
-  FedoraTestDbEndpoint:
-    Description: >
-      Passed as DB_ENDPOINT_TEST
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /default/rds/test/db-endpoint
-
-  FedoraProdDbEndpoint:
-    Description: >
-      Passed as DB_ENDPOINT_PROD
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /default/rds/prod/db-endpoint
-
   # Image Repos
 
   ApacheImageRepoName:
@@ -463,18 +443,9 @@ Resources:
           - Name: IMAGE_REPO_NAME
             Type: PLAINTEXT
             Value: !Ref FedoraImageRepo
-          - Name: DB_ENDPOINT_LOCAL
+          - Name: DB_ENDPOINT
             Type: PLAINTEXT
-            Value: !Ref FedoraLocalDbEndpoint
-          - Name: DB_ENDPOINT_TEST
-            Type: PLAINTEXT
-            Value: !Ref FedoraTestDbEndpoint
-          - Name: DB_ENDPOINT_PROD
-            Type: PLAINTEXT
-            Value: !Ref FedoraProdDbEndpoint
-          - Name: DB_ENDPOINT_AWS
-            Type: PLAINTEXT
-            Value: !Ref FedoraProdDbEndpoint
+            Value: db.isle.lib.fsu.edu
         Image: aws/codebuild/standard:4.0
         ImagePullCredentialsType: CODEBUILD
         PrivilegedMode: true
